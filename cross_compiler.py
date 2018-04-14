@@ -7,48 +7,95 @@ import errno
 import subprocess
 import argparse
 from ftplib import FTP
+import pathlib
+from urllib.parse import urlparse
 
 #Custom import statements
 
-class GNU(FTP):
+class Dir:
+    def __init__(self, abspath, components):
+        assert isinstance(components, list)
+        self.abspath = abspath
+        self.components = components
+        print('Dir')
+        print('\tabspath:\t',  self.abspath)
+        print('\tcomponents:\t', self.components)
 
-    sitename = 'ftp.gnu.org'
-    ftpdirname = '/gnu'
+        """Create all directories if they don't already exist"""
+        for comp in components:
+            pathlib.Path(os.path.join(self.abspath, comp)).mkdir(parents=True, exist_ok=True)
+        
+class BuildDir(Dir):
+    def __init__(self, basedir, components):
+        super(BuildDir, self).__init__(os.path.join(basedir, 'build'), components)
 
-    def __init__(self):
-        self.versions = []
+class SrcDir(Dir):
+    def __init__(self, basedir, components):
+        super(SrcDir, self).__init__(os.path.join(basedir, 'src'), components)
+
+class URL():
+
+    def __init__(self, url):
+        self.url = urlparse(url)
+
+    def print_url(self):
+        print('URL')
+        print('\turl.scheme:\t',   self.url.scheme)
+        print('\turl.netloc:\t',   self.url.netloc)
+        print('\turl.path:\t',     self.url.path)
+        print('\turl.params:\t',   self.url.params)
+        print('\turl.query:\t',    self.url.query)
+        print('\turl.fragment:\t', self.url.fragment)
+
+    def get_url(self):
+        return self.url
+
+class FTPSite(FTP):
+
+    def __init__(self, sitename, dirname, filename):
+        self.sitename = sitename
+        self.dirname  = dirname
+        self.filename = filename
+        self.url = URL(sitename + dirname + filename)
+        print('FTPSite')
+        print('\tsitename:\t', self.sitename)
+        print('\tdirname:\t',  self.dirname)
+        print('\tfilename:\t', self.filename)
+        self.url.print_url()
+
+    def get_localpath(self):
+        return os.path.join(self.dirname.lstrip(os.path.sep))
+
+class GNU(FTPSite):
+
+    def __init__(self, subdir, filename):
+        super(GNU, self).__init__(sitename='ftp.gnu.org',
+                                  dirname='/gnu' + subdir,
+                                  filename=filename)
 
     def dir_callback(self, dir_listing):
-        self.versions.append(dir_listing)
+        self.versions.append(dir_listing)        
 
-    def find_latest_version(self):
-        print('find_latest_version')
-        FTP.__init__(self, self.sitename)
-        self.login()
-        self.cwd(self.ftpdirname)
-        self.dir(self.dir_callback)
-        self.quit
-        print('AD - num versions = ', len(self.versions))
-        #TODO: Find latest version
+    def download(self, basedir):
+        self.localdirname = os.path.join(basedir, self.get_localpath())
+        self.localfilename = self.localdirname + self.filename
+        self.ftpfilename = self.dirname + self.filename
 
-    def download(self):
-        self.localdirname = os.path.abspath(self.ftpdirname.lstrip(os.path.sep))
-        self.filename = self.localdirname + self.filename
+        if not os.path.exists(self.localfilename):
+            with open(self.localfilename, 'wb') as f:
+                def callback(data):
+                    f.write(data)
 
-        if not os.path.exists(os.path.dirname(self.filename)):
-                os.makedirs(os.path.dirname(self.filename))
-        if not os.path.exists(self.filename):
-            with open(self.filename, 'wb') as f:
                 FTP.__init__(self, self.sitename)
                 self.login()
-                FTP.retrbinary(self, cmd='RETR {}'.format(self.filename), callback=f.write(data))
+                FTP.retrbinary(self, cmd='RETR {}'.format(self.ftpfilename), callback=callback)
                 self.quit
 
-            subprocess.check_call(['tar',
-                                   '-xvf',
-                                   self.filename,
-                                   '-C',
-                                   os.path.dirname(self.filename)])
+#            subprocess.check_call(['tar',
+#                                   '-xvf',
+#                                   self.filename,
+#                                   '-C',
+#                                   os.path.dirname(self.filename)])
 
     def build(self):
         self.builddir   = os.path.join(self.localdirname, 'build')
@@ -78,54 +125,57 @@ class GCC(GNU):
     #configure: error: Building GCC requires GMP 4.2+, MPFR 2.4.0+ and MPC 0.8.0+.
     #./contrib/download_prerequisites
 
-    ftpdirname = GNU.ftpdirname + '/gcc'
-    dirname = 'gcc-7.3.0/gcc-7.3.0'
-    filename = '/gcc-7.3.0/gcc-7.3.0.tar.gz'
-    configureargs = '--enable-languages=c,c++'
-
-    def __init__(self):
-        super(GCC, self).__init__()
-        latest_version = self.find_latest_version()
+    def __init__(self):        
+        super(GCC, self).__init__(subdir='/gcc/gcc-7.3.0',
+                                  filename='/gcc-7.3.0.tar.gz')
+        configureargs = '--enable-languages=c,c++'
 
 class BinUtils(GNU):
 
-    ftpdirname = GNU.ftpdirname + '/binutils'
-    dirname = 'binutils-2.30'
-    filename = '/binutils-2.30.tar.gz'
-    configureargs = ''
+    #ftpdirname = GNU.ftpdirname + '/binutils'
+    #dirname = 'binutils-2.30'
+    #filename = '/binutils-2.30.tar.gz'
+    #configureargs = ''
 
     def __init__(self):
-        super(BinUtils, self).__init__()
-        latest_version = self.find_latest_version()
+        super(BinUtils, self).__init__(subdir='/binutils',
+                                       filename='/binutils-2.30.tar.gz')
 
 class CrossCompiler():
 
     def __init__(self, name,
                        supported_platforms,
-                       dependencies):
+                       dependencies,
+                       basedir):
         self.name = name
         self.__supported_platforms = supported_platforms
         self.__dependencies = dependencies
+        self.basedir = basedir
 
-        self.binutils = BinUtils()
-        self.gcc = GCC()
+        self.components = [GCC(), BinUtils()]
+        self.bdir = BuildDir(self.basedir, [path.get_localpath() for path in self.components])
 
     def download(self):
-        self.binutils.download()
-        self.gcc.download()
+        for component in self.components:
+            component.download(self.bdir.abspath)
 
     def build(self):
         #self.binutils.build()
         self.gcc.build()
 
-arm_cc = CrossCompiler('GCC',
-                      ['linux'],
-                      ['build-essential'])
-
 def main():
     print("hello cross compiler world")
+    #arm_cc.download()
+    #arm_cc.build()
+    scomp = []
+    sdir = SrcDir(os.path.abspath(os.getcwd()), scomp)
+
+    arm_cc = CrossCompiler('GCC',
+                          ['linux'],
+                          ['build-essential'],
+                          os.path.abspath(os.getcwd()))
+
     arm_cc.download()
-    arm_cc.build()
 
 if __name__ == '__main__':
     main()
