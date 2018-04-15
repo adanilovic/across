@@ -48,7 +48,7 @@ class URL():
         print('\turl.fragment:\t', self.url.fragment)
 
     def get_url(self):
-        return self.url
+        return self.url.path
 
 class FTPSite(FTP):
 
@@ -78,10 +78,9 @@ class FTPSite(FTP):
         self.localdirname = os.path.join(basedir, self.get_local_dir_from_ftp_dir())
         self.localfilename = self.localdirname + self.filename
 
-        print('\tlocaldirname:\t', self.localdirname)
-        print('\tlocalfilename:\t', self.localfilename)
-
         if not os.path.exists(self.localfilename):
+            print('Downloading \'', self.url.get_url(), '\' to \'', self.localdirname,
+                  '\', please wait...', sep='')
             with open(self.localfilename, 'wb') as f:
                 def callback(data):
                     f.write(data)
@@ -92,8 +91,9 @@ class FTPSite(FTP):
                 self.quit
 
     def unzip(self):
+        print('Unzipping \'', self.localfilename,'\', please wait...', sep='')
         subprocess.check_call(['tar',
-                               '-xvf',
+                               '-xf',
                                self.localfilename,
                                '-C',
                                self.localdirname])
