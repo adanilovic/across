@@ -27,6 +27,8 @@ class Dir:
 
 class BuildDir(Dir):
     def __init__(self, basedir, components):
+        assert isinstance(components, list)
+        components.append('install')
         super(BuildDir, self).__init__(os.path.join(basedir, 'build'), components)
 
 class SrcDir(Dir):
@@ -52,10 +54,11 @@ class URL():
 
 class FTPSite(FTP):
 
-    def __init__(self, sitename, dirname, filename):
+    def __init__(self, sitename, dirname, filename, extension):
         self.sitename = sitename
         self.dirname  = dirname
-        self.filename = filename
+        self.filename = filename + extension
+        self.extension = extension
 
         self.ftpfilename = self.dirname + self.filename
 
@@ -93,6 +96,7 @@ class FTPSite(FTP):
     def unzip(self):
         print('Unzipping \'', self.localfilename,'\', please wait...', sep='')
         subprocess.check_call(['tar',
+                               '--skip-old-files',
                                '-xf',
                                self.localfilename,
                                '-C',
@@ -100,34 +104,37 @@ class FTPSite(FTP):
 
 class GNU(FTPSite):
 
-    def __init__(self, subdir, filename):
+    def __init__(self, subdir, filename, extension, configureargs=''):
         super(GNU, self).__init__(sitename='ftp.gnu.org',
                                   dirname='/gnu' + subdir,
-                                  filename=filename)
+                                  filename=filename,
+                                  extension=extension)
+        self.configureargs = configureargs
 
     def dir_callback(self, dir_listing):
         self.versions.append(dir_listing)
 
-    def build(self):
-        self.builddir   = os.path.join(self.localdirname, 'build')
-        self.installdir = os.path.join(self.localdirname, 'install')
+    def configure(self):
+        print('localdirname = ', self.localdirname)
+        print('filename = ', self.filename)
+        print('unzipdirname = ', self.filename.lstrip(os.path.sep).replace(self.extension, ''))
+        self.configuredir = os.path.join(self.localdirname,
+                                         self.filename.lstrip(os.path.sep).replace(self.extension, ''))
 
-        if not os.path.exists(self.builddir):
-                os.makedirs(self.builddir)
+        self.localbuilddir = os.path.join(self.localdirname, 'build')
 
-        if not os.path.exists(self.installdir):
-                os.makedirs(self.installdir)
+        pathlib.Path(self.localbuilddir).mkdir(parents=True, exist_ok=True)
 
         saved_path = os.getcwd()
-        os.chdir(self.builddir)
+        os.chdir(self.localbuilddir)
         try:
-            command = os.path.join('..', self.dirname, 'configure')
+            command = os.path.join(self.configuredir, 'configure')
             subprocess.check_call([command,
                                    '--target=arm-elf',
-                                   '--prefix=' + self.installdir,
+                                   #'--prefix=' + self.installdir,
                                    self.configureargs])
-            subprocess.check_call(['make'])
-            subprocess.check_call(['make' , 'install'])
+            #subprocess.check_call(['make'])
+            #subprocess.check_call(['make' , 'install'])
         finally:
             os.chdir(saved_path)
 
@@ -138,8 +145,10 @@ class GCC(GNU):
 
     def __init__(self):
         super(GCC, self).__init__(subdir='/gcc/gcc-7.3.0',
-                                  filename='/gcc-7.3.0.tar.gz')
-        configureargs = '--enable-languages=c,c++'
+                                  filename='/gcc-7.3.0',
+                                  extension='.tar.gz',
+                                  configureargs='--enable-languages=c,c++')
+
 
 class BinUtils(GNU):
 
@@ -150,7 +159,8 @@ class BinUtils(GNU):
 
     def __init__(self):
         super(BinUtils, self).__init__(subdir='/binutils',
-                                       filename='/binutils-2.30.tar.gz')
+                                       filename='/binutils-2.30',
+                                       extension='.tar.gz')
 
 class CrossCompiler():
 
@@ -175,8 +185,8 @@ class CrossCompiler():
             component.unzip()
 
     def build(self):
-        #self.binutils.build()
-        self.gcc.build()
+        for component in self.components:
+            component.configure()
 
 def main():
     print("hello cross compiler world")
@@ -192,6 +202,7 @@ def main():
 
     arm_cc.download()
     arm_cc.unzip()
+    arm_cc.build()
 
 if __name__ == '__main__':
     main()
