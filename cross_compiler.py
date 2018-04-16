@@ -28,7 +28,6 @@ class Dir:
 class BuildDir(Dir):
     def __init__(self, basedir, components):
         assert isinstance(components, list)
-        components.append('install')
         super(BuildDir, self).__init__(os.path.join(basedir, 'build'), components)
 
 class SrcDir(Dir):
@@ -102,6 +101,12 @@ class FTPSite(FTP):
                                '-C',
                                self.localdirname])
 
+        print('localdirname = ', self.localdirname)
+        print('filename = ', self.filename)
+        print('unzipdirname = ', self.filename.lstrip(os.path.sep).replace(self.extension, ''))
+        self.unzipdirname = os.path.join(self.localdirname,
+                                         self.filename.lstrip(os.path.sep).replace(self.extension, ''))
+
 class GNU(FTPSite):
 
     def __init__(self, subdir, filename, extension, configureargs=''):
@@ -115,11 +120,25 @@ class GNU(FTPSite):
         self.versions.append(dir_listing)
 
     def configure(self):
-        print('localdirname = ', self.localdirname)
-        print('filename = ', self.filename)
-        print('unzipdirname = ', self.filename.lstrip(os.path.sep).replace(self.extension, ''))
-        self.configuredir = os.path.join(self.localdirname,
-                                         self.filename.lstrip(os.path.sep).replace(self.extension, ''))
+        print('Configuring \'', self.localfilename,'\', please wait...', sep='')
+
+        self.localbuilddir = os.path.join(self.localdirname, 'build')
+        self.localinstalldir = os.path.join(self.localdirname, 'install')
+
+        pathlib.Path(self.localbuilddir).mkdir(parents=True, exist_ok=True)
+
+        saved_path = os.getcwd()
+        os.chdir(self.localbuilddir)
+        try:
+            command = os.path.join(self.unzipdirname, 'configure')
+            subprocess.check_call([command,
+                                   '--target=arm-none-eabi',
+                                   '--prefix=' + self.localinstalldir,
+                                   self.configureargs])
+        finally:
+            os.chdir(saved_path)
+
+    def make(self):
 
         self.localbuilddir = os.path.join(self.localdirname, 'build')
 
@@ -128,13 +147,8 @@ class GNU(FTPSite):
         saved_path = os.getcwd()
         os.chdir(self.localbuilddir)
         try:
-            command = os.path.join(self.configuredir, 'configure')
-            subprocess.check_call([command,
-                                   '--target=arm-elf',
-                                   #'--prefix=' + self.installdir,
-                                   self.configureargs])
-            #subprocess.check_call(['make'])
-            #subprocess.check_call(['make' , 'install'])
+            subprocess.check_call(['make'])
+            subprocess.check_call(['make' , 'install'])
         finally:
             os.chdir(saved_path)
 
@@ -149,6 +163,16 @@ class GCC(GNU):
                                   extension='.tar.gz',
                                   configureargs='--enable-languages=c,c++')
 
+    def configure(self):
+
+        saved_path = os.getcwd()
+        os.chdir(self.unzipdirname)
+        try:
+            subprocess.check_call([os.path.join('contrib', 'download_prerequisites')])
+        finally:
+            os.chdir(saved_path)
+
+        super(GCC, self).configure()
 
 class BinUtils(GNU):
 
@@ -187,11 +211,10 @@ class CrossCompiler():
     def build(self):
         for component in self.components:
             component.configure()
+            component.make()
 
 def main():
     print("hello cross compiler world")
-    #arm_cc.download()
-    #arm_cc.build()
     scomp = []
     sdir = SrcDir(os.path.abspath(os.getcwd()), scomp)
 
