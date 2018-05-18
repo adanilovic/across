@@ -3,3 +3,6 @@ build/*
 
 # VIM Swap files
 *.swp
+
+# Tag files
+tags

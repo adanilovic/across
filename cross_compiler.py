@@ -9,47 +9,20 @@ import argparse
 from ftplib import FTP
 import pathlib
 from urllib.parse import urlparse
+import argparse
+import logging
 
 #Custom import statements
+from utils import *
 
-class Dir:
-    def __init__(self, abspath, components):
-        assert isinstance(components, list)
-        self.abspath = abspath
-        self.components = components
-        print('Dir')
-        print('\tabspath:\t',  self.abspath)
-        print('\tcomponents:\t', self.components)
+# class Logger(Object):
+    # def __init__(self, filepath='.', filename='log'):
+        # self.filepath = filepath
+        # self.filename = filename
 
-        """Create all directories if they don't already exist"""
-        for comp in components:
-            pathlib.Path(os.path.join(self.abspath, comp)).mkdir(parents=True, exist_ok=True)
-
-class BuildDir(Dir):
-    def __init__(self, basedir, components):
-        assert isinstance(components, list)
-        super(BuildDir, self).__init__(os.path.join(basedir, 'build'), components)
-
-class SrcDir(Dir):
-    def __init__(self, basedir, components):
-        super(SrcDir, self).__init__(os.path.join(basedir, 'src'), components)
-
-class URL():
-
-    def __init__(self, url):
-        self.url = urlparse(url)
-
-    def print_url(self):
-        print('URL')
-        print('\turl.scheme:\t',   self.url.scheme)
-        print('\turl.netloc:\t',   self.url.netloc)
-        print('\turl.path:\t',     self.url.path)
-        print('\turl.params:\t',   self.url.params)
-        print('\turl.query:\t',    self.url.query)
-        print('\turl.fragment:\t', self.url.fragment)
-
-    def get_url(self):
-        return self.url.path
+    # def log(self, logdata):
+        # with open(os.path.join(filepath, filename), 'a') as logfile:
+            # logfile.write(logdata)
 
 class FTPSite(FTP):
 
@@ -62,13 +35,13 @@ class FTPSite(FTP):
         self.ftpfilename = self.dirname + self.filename
 
         self.url = URL(sitename + dirname + filename)
-        print('FTPSite')
-        print('\tsitename:\t', self.sitename)
-        print('\tdirname:\t',  self.dirname)
-        print('\tfilename:\t', self.filename)
+        logging.info('FTPSite')
+        logging.info('\tsitename: %s\t', self.sitename)
+        logging.info('\tdirname: %s\t',  self.dirname)
+        logging.info('\tfilename: %s\t', self.filename)
 
 
-        print('\tftpfilename:\t', self.ftpfilename)
+        logging.info('\tftpfilename: %s\t', self.ftpfilename)
 
         self.url.print_url()
 
@@ -81,8 +54,8 @@ class FTPSite(FTP):
         self.localfilename = self.localdirname + self.filename
 
         if not os.path.exists(self.localfilename):
-            print('Downloading \'', self.url.get_url(), '\' to \'', self.localdirname,
-                  '\', please wait...', sep='')
+            logging.info('Downloading \'%s\' to \'%s\', please wait...',
+                    self.url.get_url(), self.localdirname)
             with open(self.localfilename, 'wb') as f:
                 def callback(data):
                     f.write(data)
@@ -93,7 +66,7 @@ class FTPSite(FTP):
                 self.quit
 
     def unzip(self):
-        print('Unzipping \'', self.localfilename,'\', please wait...', sep='')
+        logging.info('Unzipping \'', self.localfilename,'\', please wait...', sep='')
         subprocess.check_call(['tar',
                                '--skip-old-files',
                                '-xf',
@@ -101,9 +74,9 @@ class FTPSite(FTP):
                                '-C',
                                self.localdirname])
 
-        print('localdirname = ', self.localdirname)
-        print('filename = ', self.filename)
-        print('unzipdirname = ', self.filename.lstrip(os.path.sep).replace(self.extension, ''))
+        logging.info('localdirname = %s', self.localdirname)
+        logging.info('filename = %s', self.filename)
+        logging.info('unzipdirname = %s', self.filename.lstrip(os.path.sep).replace(self.extension, ''))
         self.unzipdirname = os.path.join(self.localdirname,
                                          self.filename.lstrip(os.path.sep).replace(self.extension, ''))
 
@@ -120,7 +93,7 @@ class GNU(FTPSite):
         self.versions.append(dir_listing)
 
     def configure(self):
-        print('Configuring \'', self.localfilename,'\', please wait...', sep='')
+        logging.info('Configuring \'', self.localfilename,'\', please wait...', sep='')
 
         self.localbuilddir = os.path.join(self.localdirname, 'build')
         self.localinstalldir = os.path.join(self.localdirname, 'install')
@@ -192,6 +165,7 @@ class CrossCompiler():
                        supported_platforms,
                        dependencies,
                        basedir):
+
         self.name = name
         self.__supported_platforms = supported_platforms
         self.__dependencies = dependencies
@@ -214,9 +188,22 @@ class CrossCompiler():
             component.make()
 
 def main():
-    print("hello cross compiler world")
-    scomp = []
-    sdir = SrcDir(os.path.abspath(os.getcwd()), scomp)
+
+    logfiledir = os.path.join(os.getcwd(), BuildDir.build_dir)
+    """Create all directories if they don't already exist"""
+    pathlib.Path(logfiledir).mkdir(parents=True, exist_ok=True)
+
+    file_handler = logging.FileHandler(filename=os.path.join(logfiledir, 'build.log'), mode='w')
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    handlers = [file_handler, stdout_handler]
+
+    logging.basicConfig(level=logging.DEBUG,
+                format='%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(funcName)s - %(levelname)s - %(message)s',
+                datefmt='%m/%d/%Y %I:%M:%S %p',
+                handlers=handlers)
+
+    #scomp = []
+    #sdir = SrcDir(os.path.abspath(os.getcwd()), scomp)
 
     arm_cc = CrossCompiler('GCC',
                           ['linux'],
@@ -226,6 +213,7 @@ def main():
     arm_cc.download()
     arm_cc.unzip()
     arm_cc.build()
+    sys.exit(0)
 
 if __name__ == '__main__':
     main()
