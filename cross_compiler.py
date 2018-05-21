@@ -198,7 +198,7 @@ def main():
     handlers = [file_handler, stdout_handler]
 
     logging.basicConfig(level=logging.DEBUG,
-                format='%(asctime)s - %(name)s - %(filename)s:%(lineno)s - %(funcName)s - %(levelname)s - %(message)s',
+                format='[%(asctime)s] [%(name)s ] [%(filename)20s:%(lineno)s] [%(funcName)15s] [%(levelname)8s] %(message)s',
                 datefmt='%m/%d/%Y %I:%M:%S %p',
                 handlers=handlers)
 
